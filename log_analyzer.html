@@ -166,6 +166,7 @@
     overflow: hidden; text-overflow: ellipsis;
   }
   .term-pill.zero { background: #FBE7E8; color: #9B2A30; border-color: #F3C9CB; }
+  .term-pill.idle { background: #F1F3F5; color: #7C7D80; border-color: #E2E6EA; }
   .term-pill .n { font-weight: 400; opacity: 0.75; }
 
   /* ---- Timestamp range inputs ------------------------------------------- */
@@ -280,8 +281,13 @@
       <span class="mono">*__Ex_*.log</span>/<span class="mono">*__App_*.log</span> files, or any mix at once. Each
       file's format is detected automatically — or just drag the files/folders straight onto this page.<br/>
       2. Everything is parsed <b>in your browser only</b> — nothing is uploaded anywhere, safe for logs with customer data, tokens, etc.<br/>
-      3. <b>Search</b> takes <b>several keywords at once</b>, in any order — <span class="mono">bakong 500 rid-00136</span>
-      finds entries containing all three, wherever each one appears. It searches the full body of every entry plus the
+      3. <b>Search</b> has three modes, picked with the buttons beside the box:
+      <b>All words</b> (the default) needs every keyword to appear somewhere in the entry, in any order —
+      <span class="mono">bakong 500 rid-00136</span> finds entries containing all three, wherever each one appears;
+      <b>Any word</b> matches an entry containing at least one of them, for widening a hunt
+      (<span class="mono">timeout refused reset</span>); <b>Exact</b> stops splitting altogether and looks for the whole
+      query as one literal string, spaces and punctuation included —
+      <span class="mono">REQUEST -&gt; T24GetCustomerByCIF</span>. Your choice is remembered. It searches the full body of every entry plus the
       route, status, level and RequestId, not just what's on screen. Wrap words in quotes to keep them together:
       <span class="mono">"insufficient balance"</span>. The box wraps and grows so you can always read back the whole
       query, and when you use more than one keyword each is listed underneath with how many rows contain it on its own —
@@ -355,7 +361,8 @@
          wraps, and the controls beside it should stay put. -->
     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start;">
       <textarea id="containsFilter" class="search-area" rows="1" spellcheck="false" autocomplete="off"
-        placeholder="Search — several keywords, any order. &quot;Quote a phrase&quot; to keep it together."></textarea>
+        placeholder="Search… keywords, or a phrase in quotes"></textarea>
+      <span id="searchModes"></span>
       <select id="productFilter"><option value="">All products</option></select>
       <select id="serviceFilter"><option value="">All services</option></select>
       <select id="routeFilter"><option value="">All routes/modules</option></select>
@@ -672,7 +679,14 @@ window.WS = (function () {
     ".ws-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0B1220;color:#E8EDF4;",
     "font-family:'IBM Plex Mono',monospace;font-size:12px;padding:9px 15px;border-radius:6px;z-index:1500;",
     "box-shadow:0 8px 28px rgba(0,0,0,.3);opacity:0;transition:opacity .18s;pointer-events:none;max-width:88vw;}",
-    ".ws-toast.show{opacity:1;}"
+    ".ws-toast.show{opacity:1;}",
+    /* search mode selector — identical in both tools */
+    ".ws-modes{display:inline-flex;border:1px solid #DCE1E8;border-radius:5px;overflow:hidden;flex-shrink:0;}",
+    ".ws-modes button{font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:700;padding:7px 11px;",
+    "border:none;border-right:1px solid #DCE1E8;background:#fff;color:#3D4759;cursor:pointer;white-space:nowrap;}",
+    ".ws-modes button:last-child{border-right:none;}",
+    ".ws-modes button:hover{background:#F2F5F8;}",
+    ".ws-modes button.on{background:var(--ws-color,#005EA1);color:#fff;}"
   ].join("");
 
   function el(id) { return document.getElementById(id); }
@@ -1171,8 +1185,30 @@ window.WS = (function () {
      has to appear somewhere in the entry, in any order, and a "quoted phrase"
      stays glued together. */
 
-  function parseQuery(str) {
-    var terms = [], i = 0, s = String(str == null ? "" : str);
+  /* Three modes, because one behaviour can't serve both jobs:
+
+       exact  — the query is one literal string, spaces and punctuation and
+                all. For hunting a known URI or message you can paste.
+       all    — every space-separated word must appear somewhere, in any
+                order. For the usual case: three things you half-remember.
+       any    — at least one word must appear. For widening: several words
+                for the same failure (timeout refused reset).
+
+     Splitting is wrong for the first and right for the other two, so the mode
+     has to reach the parser, not just the matcher. */
+  var MODES = { exact: 1, all: 1, any: 1 };
+  function normMode(m) { return MODES[m] ? m : "all"; }
+
+  function parseQuery(str, mode) {
+    var s = String(str == null ? "" : str);
+    if (normMode(mode) === "exact") {
+      // No splitting and no quote handling: a quote you typed is a quote you
+      // are looking for. Collapsed internal whitespace only, so a query
+      // wrapped across two lines in the box still matches one-line text.
+      var raw = s.trim().replace(/\s+/g, " ");
+      return raw ? [{ text: raw.toLowerCase(), phrase: true, raw: raw }] : [];
+    }
+    var terms = [], i = 0;
     while (i < s.length) {
       var ch = s[i];
       if (ch === '"' || ch === "'") {
@@ -1204,6 +1240,16 @@ window.WS = (function () {
     for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i].text) === -1) return false;
     return true;
   }
+  function matchAny(hay, terms) {
+    for (var i = 0; i < terms.length; i++) if (hay.indexOf(terms[i].text) !== -1) return true;
+    return false;
+  }
+  // exact resolves to a single term, so "all" and "any" agree on it — the
+  // difference between the modes lives entirely in how the query was parsed.
+  function matchTerms(hay, terms, mode) {
+    if (!terms.length) return true;
+    return normMode(mode) === "any" ? matchAny(hay, terms) : matchAll(hay, terms);
+  }
 
   function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
@@ -1229,6 +1275,61 @@ window.WS = (function () {
   /* A one-line <input> hides everything past its width, so a query built from
      several keywords can't be read back. This turns the field into a box that
      wraps and grows with the text, up to a sane ceiling, then scrolls. */
+  /* The mode selector. Built here rather than in each page so the two tools
+     offer exactly the same three choices in the same order with the same
+     wording — switching between them shouldn't mean relearning the control. */
+  var MODE_DEF = [
+    ["all", "All words", "Every word must appear somewhere in the entry, in any order."],
+    ["any", "Any word", "The entry matches if it contains at least one of the words."],
+    ["exact", "Exact", "The whole query is looked for as one literal string, spaces and all."]
+  ];
+  var modeWraps = [];
+  function paintModes(m) {
+    modeWraps.forEach(function (w) {
+      Array.prototype.forEach.call(w.children, function (c) {
+        c.className = c.getAttribute("data-mode") === m ? "on" : "";
+      });
+    });
+  }
+  function mountModes(container, onChange) {
+    var cur = API.mode();
+    var wrap = document.createElement("span");
+    wrap.className = "ws-modes";
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "search mode");
+    MODE_DEF.forEach(function (m) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("data-mode", m[0]);
+      b.textContent = m[1];
+      b.title = m[2];
+      if (m[0] === cur) b.className = "on";
+      wrap.appendChild(b);
+    });
+    wrap.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-mode]");
+      if (!b) return;
+      var m = API.mode(b.getAttribute("data-mode"));
+      paintModes(m);
+      if (onChange) onChange(m);
+    });
+    container.appendChild(wrap);
+    modeWraps.push(wrap);
+
+    /* The mode is stored in localStorage, which every tab opened from disk
+       shares — so changing it in one tab silently changed what the others
+       would do on their next filter, while their buttons still showed the old
+       choice. The control would have been lying. Other tabs now repaint and
+       re-run, so what is highlighted is always what is being applied. */
+    window.addEventListener("storage", function (ev) {
+      if (ev.key !== LS("searchMode")) return;
+      var m = normMode(ev.newValue);
+      paintModes(m);
+      if (onChange) onChange(m);
+    });
+    return wrap;
+  }
+
   function autoGrow(ta, maxPx) {
     if (!ta) return;
     var cap = maxPx || 132;
@@ -1365,9 +1466,21 @@ window.WS = (function () {
     source: function () { return state.source; },
     parseQuery: parseQuery,
     matchAll: matchAll,
+    matchTerms: matchTerms,
+    normMode: normMode,
+    // The mode is a preference you set once, so it is shared across tabs like
+    // the export settings rather than resetting on every new tab.
+    mode: function (m) {
+      if (m !== undefined) { lsSet("searchMode", normMode(m)); return normMode(m); }
+      return normMode(lsGet("searchMode", "all"));
+    },
+    modeLabel: function (m) {
+      return { exact: "exact phrase", all: "all keywords", any: "any keyword" }[normMode(m)];
+    },
     highlightRe: highlightRe,
     termDiagnostics: termDiagnostics,
     autoGrow: autoGrow,
+    mountModes: mountModes,
     escapeRe: escapeRe
   };
   return API;
@@ -1911,6 +2024,7 @@ window.WS = (function () {
     sortDir: -1,
     query: "",
     terms: [],
+    mode: "all",
     highlightRe: null,
     routeSet: {},
     productSet: {},
@@ -2583,7 +2697,7 @@ window.WS = (function () {
       // how you narrow to a failing call.
       r._hay = (r.route + " " + r.product + " " + r.service + " " + r.target + " " + r.rid + " " +
         (r.status === undefined ? "" : r.status) + " " + (r.level || "") + " " +
-        (PRODUCT_LABELS[r.product] || "") + " " +
+        (PRODUCT_LABELS[r.product] || "") + " " + (r.message || "") + " " +
         r.exType + " " + r.exMsg + " " + r.reqData + " " + r.respData).toLowerCase();
     }
     return r._hay;
@@ -2598,7 +2712,7 @@ window.WS = (function () {
     // Every term must appear somewhere in the row, in any order — so three
     // things you half-remember about one incident find it, which a single
     // ordered substring never could.
-    if (terms.length && !WS.matchAll(hayOf(r), terms)) return false;
+    if (terms.length && !WS.matchTerms(hayOf(r), terms, state.mode)) return false;
     return true;
   }
 
@@ -2615,7 +2729,9 @@ window.WS = (function () {
 
   function applyFilter() {
     var q = state.query;
-    var terms = WS.parseQuery(q);
+    var mode = WS.mode();
+    state.mode = mode;
+    var terms = WS.parseQuery(q, mode);
     state.terms = terms;
     state.highlightRe = WS.highlightRe(terms);
     var product = el.productFilter.value;
@@ -2649,10 +2765,11 @@ window.WS = (function () {
 
     state.filtered = filtered;
     renderTerms(terms, product, service, route, minMs);
-    var matchWord = terms.length
-      ? (terms.length === 1 ? ' matching ' + JSON.stringify(terms[0].raw)
-                            : " matching all " + terms.length + " keywords")
-      : "";
+    var matchWord = !terms.length ? ""
+      : state.mode === "exact" ? " containing the exact phrase " + JSON.stringify(terms[0].raw)
+      : terms.length === 1 ? " matching " + JSON.stringify(terms[0].raw)
+      : state.mode === "any" ? " matching any of " + terms.length + " keywords"
+      : " matching all " + terms.length + " keywords";
     el.searchStatus.textContent = filtered.length.toLocaleString() + " row(s)" + matchWord +
       (product ? " in " + (PRODUCT_LABELS[product] || product) : "") +
       (service ? " · service " + service : "") +
@@ -2672,7 +2789,8 @@ window.WS = (function () {
      Only computed when it can actually help — more than one term. */
   function renderTerms(terms, product, service, route, minMs) {
     var row = el.termRow;
-    if (terms.length < 2) { row.style.display = "none"; row.innerHTML = ""; return; }
+    // Exact mode has exactly one literal term, so a breakdown says nothing.
+    if (terms.length < 2 || state.mode === "exact") { row.style.display = "none"; row.innerHTML = ""; return; }
 
     // Counted against the rows that pass every filter except the search, so
     // the numbers answer "within what I'm already looking at".
@@ -2681,18 +2799,22 @@ window.WS = (function () {
     });
     var diag = WS.termDiagnostics(base, terms, hayOf);
 
+    var anyMode = state.mode === "any";
     row.style.display = "flex";
     row.innerHTML = "";
     var lead = document.createElement("span");
     lead.className = "note";
     lead.style.margin = "0 2px 0 0";
-    lead.textContent = "Each keyword on its own:";
+    lead.textContent = anyMode ? "Each keyword contributes:" : "Each keyword on its own:";
     row.appendChild(lead);
     diag.forEach(function (d) {
       var s = document.createElement("span");
-      s.className = "term-pill" + (d.count === 0 ? " zero" : "");
+      // A zero only breaks the result when every term has to match. Under
+      // "any word" it simply adds nothing, so it isn't flagged as the culprit.
+      s.className = "term-pill" + (d.count === 0 && !anyMode ? " zero" : "") + (d.count === 0 && anyMode ? " idle" : "");
       s.title = d.count === 0
-        ? "no row contains this — it is what empties the result"
+        ? (anyMode ? "no row contains this — it adds nothing to the result"
+                   : "no row contains this — it is what empties the result")
         : d.count.toLocaleString() + " row(s) contain this term";
       s.innerHTML = escapeHtml(d.term.raw) + ' <span class="n">' + d.count.toLocaleString() + "</span>";
       row.appendChild(s);
@@ -2707,8 +2829,8 @@ window.WS = (function () {
   function renderChips(product, service, route, minMs, fromTs, toTs, q) {
     var chips = [];
     if (q && q.trim()) chips.push({
-      key: state.terms.length > 1 ? "keywords" : "search",
-      text: state.terms.length > 1 ? state.terms.map(function (t) { return t.raw; }).join(" + ") : q.trim(),
+      key: state.mode === "exact" ? "exact" : state.terms.length > 1 ? (state.mode === "any" ? "any of" : "all of") : "search",
+      text: state.terms.length > 1 ? state.terms.map(function (t) { return t.raw; }).join(state.mode === "any" ? " / " : " + ") : q.trim(),
       clear: function () { el.containsFilter.value = ""; state.query = ""; if (searchFit) searchFit(); }
     });
     if (product) chips.push({ key: "product", text: PRODUCT_LABELS[product] || product, clear: function () { el.productFilter.value = ""; } });
@@ -3604,6 +3726,13 @@ window.WS = (function () {
   // edge; searchFit() is also called whenever code clears the field, so the
   // box shrinks back rather than staying tall and empty.
   var searchFit = WS.autoGrow(el.containsFilter, 140);
+
+  // Exact / All words / Any word. Switching re-runs the query immediately, so
+  // the same text can be compared under two modes without retyping it.
+  WS.mountModes(document.getElementById("searchModes"), function () {
+    state.shownCount = PAGE_SIZE;
+    applyFilter();
+  });
 
   // ---- Workspace: tab identity, range clipboard, export destination ---------
   WS.init({
