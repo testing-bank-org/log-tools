@@ -44,6 +44,8 @@
     max-width:260px;overflow:hidden;text-overflow:ellipsis;}
   .term-pill.zero{background:#FBE7E8;color:#9B2A30;border-color:#F3C9CB;}
   .term-pill.idle{background:#F1F3F5;color:#7C7D80;border-color:var(--line);}
+  button.linklike{background:none;border:none;padding:0;font-family:inherit;font-size:inherit;
+    color:var(--blue);text-decoration:underline;cursor:pointer;font-weight:600;}
   .term-pill .n{font-weight:400;opacity:.75;}
   .fld{display:flex;flex-direction:column;gap:3px;}
   .fld>span{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.06em;color:var(--gray);font-weight:700;}
@@ -217,7 +219,11 @@ WHERE t.requestTimestamp BETWEEN @Start AND @End ORDER BY t.requestTimestamp;</p
       keyword somewhere in the event, in any order — <code>khqr 412 0977000045</code> finds events containing all three
       even though they live in different columns. <b>Any word</b> matches on at least one, for widening a hunt
       (<code>timeout refused reset</code>). <b>Exact</b> stops splitting and looks for the whole query as one literal
-      string — <code>POST khqr/confirm</code>. The choice is remembered.
+      string — this is the one for &ldquo;how many <code>invalid signature</code> errors today&rdquo;, since All words
+      would also count events where <i>invalid</i> and <i>signature</i> merely both appear. Typing the quotes is fine:
+      <code>"invalid signature"</code> and <code>invalid signature</code> behave identically in Exact, and a phrase is
+      only ever matched inside a single field. The choice is remembered, and when All words over-counts, the line
+      under the keywords says how many contain the phrase and offers the switch.
       It covers bodies, URIs, every column, plus status, level and source. Quote to keep words together:
       <code>"insufficient balance"</code>. The box wraps and grows so the whole query stays readable, and with more than
       one keyword each is listed underneath with its own hit count — a typo shows as <code>tmeout 0</code> rather than
@@ -293,6 +299,7 @@ WHERE t.requestTimestamp BETWEEN @Start AND @End ORDER BY t.requestTimestamp;</p
         <span class="ts-echo" id="rangeHint"></span></div>
     </div>
     <div class="term-row" id="termRow" style="display:none"></div>
+    <div class="note" id="exactHint" style="display:none;padding:0 14px 10px;"></div>
     <div class="chips" id="chipRow" style="display:none"></div>
   </div>
 
@@ -1060,10 +1067,16 @@ window.WS = (function () {
   function parseQuery(str, mode) {
     var s = String(str == null ? "" : str);
     if (normMode(mode) === "exact") {
-      // No splitting and no quote handling: a quote you typed is a quote you
-      // are looking for. Collapsed internal whitespace only, so a query
-      // wrapped across two lines in the box still matches one-line text.
       var raw = s.trim().replace(/\s+/g, " ");
+      // Wrapping a phrase in quotes is how everyone says "these words,
+      // together" — so typing "invalid signature" in Exact mode must find the
+      // phrase, not the seven-character string with quote marks on the ends,
+      // which matches nothing and looks like the mode is broken. One matching
+      // outer pair is stripped; quotes anywhere else stay literal.
+      if (raw.length > 1) {
+        var a = raw.charAt(0), b = raw.charAt(raw.length - 1);
+        if ((a === '"' && b === '"') || (a === "'" && b === "'")) raw = raw.slice(1, -1).trim();
+      }
       return raw ? [{ text: raw.toLowerCase(), phrase: true, raw: raw }] : [];
     }
     var terms = [], i = 0;
@@ -1092,6 +1105,23 @@ window.WS = (function () {
     var seen = {}, out = [];
     terms.forEach(function (t) { if (!seen[t.text]) { seen[t.text] = 1; out.push(t); } });
     return out;
+  }
+
+  /* Fields are joined with a newline, never a space. The searchable text of a
+     row is a concatenation of its columns, so joining with spaces let an
+     "exact phrase" match across a field boundary — the last word of the route
+     followed by the first word of the body reads as adjacent text when it is
+     nothing of the kind. A typed query has its whitespace collapsed to single
+     spaces and so can never contain a newline, which makes a field boundary
+     unmatchable by construction. Single words are unaffected. */
+  function joinHay(parts) {
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var v = parts[i];
+      if (v === undefined || v === null || v === "") continue;
+      out.push(String(v));
+    }
+    return out.join("\n").toLowerCase();
   }
 
   function matchAll(hay, terms) {
@@ -1325,6 +1355,7 @@ window.WS = (function () {
     parseQuery: parseQuery,
     matchAll: matchAll,
     matchTerms: matchTerms,
+    joinHay: joinHay,
     normMode: normMode,
     // The mode is a preference you set once, so it is shared across tabs like
     // the export settings rather than resetting on every new tab.
@@ -1745,7 +1776,7 @@ async function eventFromAuditLog(raw,tz){
   ];
   if(khqr)ev.detail.push(["KHQR","created "+(khqr.created?fmtTsTz(khqr.created):"—")+" · expires "+(khqr.expires?fmtTsTz(khqr.expires):"—")]);
   if(errs.length)ev.detail.push(["decode errors",errs.join(" | ")]);
-  ev.hay=(uri+" "+reqTxt+" "+respTxt+" "+(colOf(raw,"additionalinfo")||"")+" "+(colOf(raw,"requestheaders")||"")).toLowerCase();
+  ev.hay=WS.joinHay([uri,reqTxt,respTxt,colOf(raw,"additionalinfo"),colOf(raw,"requestheaders")]);
   return ev;
 }
 function stripBlobs(raw){var o={};for(var k in raw){o[k]=/content$/i.test(k)&&raw[k]&&raw[k].length>200?"[blob "+raw[k].length+" chars]":raw[k];}return o;}
@@ -1787,7 +1818,7 @@ function eventFromTxn(raw,tz){
     ["channelRefNo",colOf(raw,"channelrefno")||"—"],
     ["req ts / resp ts",(colOf(raw,"requesttimestamp")||"—")+"  →  "+(colOf(raw,"responsetimestamp")||"—")]
   ];
-  ev.hay=((colOf(raw,"structureddatarequest")||"")+" "+(colOf(raw,"structureddataresponse")||"")+" "+payRef+" "+tType+" "+cbsAuth+" "+cbsRC+" "+(colOf(raw,"from")||"")+" "+(colOf(raw,"to")||"")).toLowerCase();
+  ev.hay=WS.joinHay([colOf(raw,"structureddatarequest"),colOf(raw,"structureddataresponse"),payRef,tType,cbsAuth,cbsRC,colOf(raw,"from"),colOf(raw,"to")]);
   return ev;
 }
 
@@ -1819,7 +1850,7 @@ function eventFromLogRow(r){
   if(td&&typeof td==="object")scanAccounts(td,ev);
   var m;var re=/"?(sbiUniqueId|TransactionId|transactionId)"?\s*[:=]\s*"?([A-Za-z0-9._-]{6,})"?/g;
   while((m=re.exec(dataStr)))addKey(ev,"sbiuid",m[2]);
-  ev.hay=(r.route+" "+r.product+" "+r.target+" "+r.rid+" "+r.exType+" "+r.exMsg+" "+dataStr).toLowerCase();
+  ev.hay=WS.joinHay([r.route,r.product,r.target,r.rid,r.exType,r.exMsg,r.reqData,r.respData]);
   return ev;
 }
 
@@ -2322,10 +2353,10 @@ function isErr(e){return /^[45]/.test(String(e.status))||e.level==="ERR"||e.leve
 // columns too — "412" or "ERR" alongside an account number is exactly how you
 // narrow to a failing call.
 function hayOf(e){
+  // Joined with newlines so an exact phrase can never straddle two fields
+  // (see WS.joinHay); single words behave exactly as before.
   if(e._hay===undefined){
-    e._hay=(e.hay+" "+String(e.summary||"")+" "+String(e.title||"")+" "+
-      String(e.status||"")+" "+String(e.level||"")+" "+String(e.kind||"")+" "+
-      String(e.sourceLabel||"")).toLowerCase();
+    e._hay=WS.joinHay([e.hay,e.summary,e.title,e.status,e.level,e.kind,e.sourceLabel]);
   }
   return e._hay;
 }
@@ -2379,6 +2410,7 @@ function applyFilters(){
   renderStats();
   WS.setCount(S.events.length, S.filtered.length);
   renderTerms(terms,fSource,fKind,fStatus,fEndpoint,fErr);
+  renderExactHint(terms,S.filtered);
   renderChips(q,fSource,fKind,fStatus,fEndpoint,fErr,from,to);
   if(S.view==="table")renderTable();else renderTimeline();
   drawHist();
@@ -2412,6 +2444,33 @@ function renderTerms(terms,fSource,fKind,fStatus,fEndpoint,fErr){
     sp.innerHTML=esc(d.term.raw)+' <span class="n">'+d.count.toLocaleString()+'</span>';
     row.appendChild(sp);
   });
+}
+
+/* "All words" answers a different question from the one people usually mean
+   when they type two words that belong together: it counts events where both
+   appear anywhere, which for "invalid signature" quietly includes events about
+   an invalid certificate and a signature key. When the phrase gives a smaller,
+   truer answer, say so and offer the switch. */
+function renderExactHint(terms,filtered){
+  var box=$("#exactHint");
+  if(S.mode!=="all"||terms.length<2||!filtered.length){box.style.display="none";return;}
+  var phrase=terms.map(function(t){return t.raw;}).join(" ").toLowerCase();
+  var n=0;
+  for(var i=0;i<filtered.length;i++)if(hayOf(filtered[i]).indexOf(phrase)!==-1)n++;
+  if(n===filtered.length){box.style.display="none";return;}   // nothing to gain
+  box.style.display="block";box.innerHTML="";
+  box.appendChild(document.createTextNode(n.toLocaleString()+" of these contain the words together as one phrase. "));
+  var a=document.createElement("button");
+  a.className="linklike";a.type="button";a.textContent="Show only those (Exact)";
+  a.addEventListener("click",function(){
+    $("#qText").value=phrase;
+    if(S.searchFit)S.searchFit();
+    WS.mode("exact");
+    document.querySelectorAll("#searchModes button[data-mode]").forEach(function(c){
+      c.className=c.getAttribute("data-mode")==="exact"?"on":"";});
+    S.shownCount=500;applyFilters();
+  });
+  box.appendChild(a);
 }
 
 function renderChips(q,fSource,fKind,fStatus,fEndpoint,fErr,from,to){

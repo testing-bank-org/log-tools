@@ -167,6 +167,10 @@
   }
   .term-pill.zero { background: #FBE7E8; color: #9B2A30; border-color: #F3C9CB; }
   .term-pill.idle { background: #F1F3F5; color: #7C7D80; border-color: #E2E6EA; }
+  button.linklike {
+    background: none; border: none; padding: 0; font-family: inherit; font-size: inherit;
+    color: var(--blue); text-decoration: underline; cursor: pointer; font-weight: 600;
+  }
   .term-pill .n { font-weight: 400; opacity: 0.75; }
 
   /* ---- Timestamp range inputs ------------------------------------------- */
@@ -286,8 +290,13 @@
       <span class="mono">bakong 500 rid-00136</span> finds entries containing all three, wherever each one appears;
       <b>Any word</b> matches an entry containing at least one of them, for widening a hunt
       (<span class="mono">timeout refused reset</span>); <b>Exact</b> stops splitting altogether and looks for the whole
-      query as one literal string, spaces and punctuation included —
-      <span class="mono">REQUEST -&gt; T24GetCustomerByCIF</span>. Your choice is remembered. It searches the full body of every entry plus the
+      query as one literal string, spaces and punctuation included — this is the one for
+      &ldquo;how many <span class="mono">invalid signature</span> errors today&rdquo;, because All words would also count
+      rows where <i>invalid</i> and <i>signature</i> merely both appear. Typing the quotes is fine:
+      <span class="mono">"invalid signature"</span> and <span class="mono">invalid signature</span> mean the same thing
+      in Exact. A phrase is only ever found inside a single field, never spanning two columns. Your choice is
+      remembered, and when All words is over-counting, the line under the keywords tells you how many contain the
+      phrase and offers the switch. It searches the full body of every entry plus the
       route, status, level and RequestId, not just what's on screen. Wrap words in quotes to keep them together:
       <span class="mono">"insufficient balance"</span>. The box wraps and grows so you can always read back the whole
       query, and when you use more than one keyword each is listed underneath with how many rows contain it on its own —
@@ -402,6 +411,7 @@
       <button id="presetClear">Clear filters</button>
     </div>
     <div class="term-row" id="termRow" style="display:none"></div>
+    <div class="note" id="exactHint" style="display:none; margin-top:7px;"></div>
     <div class="chip-row" id="chipRow"></div>
     <div class="note" id="searchStatus" style="margin-top:8px;"></div>
   </div>
@@ -1202,10 +1212,16 @@ window.WS = (function () {
   function parseQuery(str, mode) {
     var s = String(str == null ? "" : str);
     if (normMode(mode) === "exact") {
-      // No splitting and no quote handling: a quote you typed is a quote you
-      // are looking for. Collapsed internal whitespace only, so a query
-      // wrapped across two lines in the box still matches one-line text.
       var raw = s.trim().replace(/\s+/g, " ");
+      // Wrapping a phrase in quotes is how everyone says "these words,
+      // together" — so typing "invalid signature" in Exact mode must find the
+      // phrase, not the seven-character string with quote marks on the ends,
+      // which matches nothing and looks like the mode is broken. One matching
+      // outer pair is stripped; quotes anywhere else stay literal.
+      if (raw.length > 1) {
+        var a = raw.charAt(0), b = raw.charAt(raw.length - 1);
+        if ((a === '"' && b === '"') || (a === "'" && b === "'")) raw = raw.slice(1, -1).trim();
+      }
       return raw ? [{ text: raw.toLowerCase(), phrase: true, raw: raw }] : [];
     }
     var terms = [], i = 0;
@@ -1234,6 +1250,23 @@ window.WS = (function () {
     var seen = {}, out = [];
     terms.forEach(function (t) { if (!seen[t.text]) { seen[t.text] = 1; out.push(t); } });
     return out;
+  }
+
+  /* Fields are joined with a newline, never a space. The searchable text of a
+     row is a concatenation of its columns, so joining with spaces let an
+     "exact phrase" match across a field boundary — the last word of the route
+     followed by the first word of the body reads as adjacent text when it is
+     nothing of the kind. A typed query has its whitespace collapsed to single
+     spaces and so can never contain a newline, which makes a field boundary
+     unmatchable by construction. Single words are unaffected. */
+  function joinHay(parts) {
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var v = parts[i];
+      if (v === undefined || v === null || v === "") continue;
+      out.push(String(v));
+    }
+    return out.join("\n").toLowerCase();
   }
 
   function matchAll(hay, terms) {
@@ -1467,6 +1500,7 @@ window.WS = (function () {
     parseQuery: parseQuery,
     matchAll: matchAll,
     matchTerms: matchTerms,
+    joinHay: joinHay,
     normMode: normMode,
     // The mode is a preference you set once, so it is shared across tabs like
     // the export settings rather than resetting on every new tab.
@@ -2044,7 +2078,7 @@ window.WS = (function () {
   ["pickBtn","dirInput","rescanBtn","exportBtn","clearBtn","folderLabel","dropZone",
    "helpToggle","helpBody",
    "statRow","statFiles","statLegs","statProducts","statRoutes","statSlow","statShown",
-   "searchPanel","containsFilter","termRow","productFilter","serviceFilter","routeFilter","minMsInput","searchStatus",
+   "searchPanel","containsFilter","termRow","exactHint","productFilter","serviceFilter","routeFilter","minMsInput","searchStatus",
    "fromDateInput","toDateInput","dateRangeClear","fromEcho","toEcho","rangeSummary","rangeHint","chipRow",
    "timelinePanel","timelineCanvas","timelineTip","tlStart","tlMid","tlEnd","tableRegion",
    "tlZoomBtn","tlResetBtn",
@@ -2694,11 +2728,11 @@ window.WS = (function () {
     if (r._hay === undefined) {
       // Status and level are columns you can see, so they have to be columns
       // you can search — "500" or "ERR" as one of several keywords is exactly
-      // how you narrow to a failing call.
-      r._hay = (r.route + " " + r.product + " " + r.service + " " + r.target + " " + r.rid + " " +
-        (r.status === undefined ? "" : r.status) + " " + (r.level || "") + " " +
-        (PRODUCT_LABELS[r.product] || "") + " " + (r.message || "") + " " +
-        r.exType + " " + r.exMsg + " " + r.reqData + " " + r.respData).toLowerCase();
+      // how you narrow to a failing call. Joined with newlines, so an exact
+      // phrase can never straddle two fields (see WS.joinHay).
+      r._hay = WS.joinHay([r.route, r.product, r.service, r.target, r.rid,
+        r.status, r.level, PRODUCT_LABELS[r.product], r.message,
+        r.exType, r.exMsg, r.reqData, r.respData]);
     }
     return r._hay;
   }
@@ -2777,6 +2811,7 @@ window.WS = (function () {
       (!isNaN(fromTs) ? " from " + fmtShort(fromTs) : "") +
       (!isNaN(toTs) ? " to " + fmtShort(toTs) : "") +
       (state.errorsOnly ? " that are errors" : "") + ".";
+    renderExactHint(terms, filtered);
     renderChips(product, service, route, minMs, fromTs, toTs, q);
     WS.setCount(state.rows.length, filtered.length);
     renderTable();
@@ -2819,6 +2854,41 @@ window.WS = (function () {
       s.innerHTML = escapeHtml(d.term.raw) + ' <span class="n">' + d.count.toLocaleString() + "</span>";
       row.appendChild(s);
     });
+  }
+
+  /* "All words" answers a different question from the one people usually mean
+     when they type two words that belong together: it counts rows where both
+     appear anywhere, which for "invalid signature" quietly includes rows about
+     an invalid certificate and a signature key. When the phrase would give a
+     smaller, truer answer, say so and offer the switch rather than waiting for
+     the discrepancy to be noticed. */
+  function renderExactHint(terms, filtered) {
+    var box = el.exactHint;
+    if (state.mode !== "all" || terms.length < 2 || !filtered.length) { box.style.display = "none"; return; }
+    var phrase = terms.map(function (t) { return t.raw; }).join(" ").toLowerCase();
+    var n = 0;
+    for (var i = 0; i < filtered.length; i++) if (hayOf(filtered[i]).indexOf(phrase) !== -1) n++;
+    if (n === filtered.length) { box.style.display = "none"; return; }  // nothing to gain
+    box.style.display = "block";
+    box.innerHTML = "";
+    box.appendChild(document.createTextNode(
+      n.toLocaleString() + " of these contain the words together as one phrase. "));
+    var a = document.createElement("button");
+    a.className = "linklike";
+    a.type = "button";
+    a.textContent = "Show only those (Exact)";
+    a.addEventListener("click", function () {
+      el.containsFilter.value = phrase;
+      state.query = phrase;
+      if (searchFit) searchFit();
+      WS.mode("exact");
+      document.querySelectorAll("#searchModes button[data-mode]").forEach(function (c) {
+        c.className = c.getAttribute("data-mode") === "exact" ? "on" : "";
+      });
+      state.shownCount = PAGE_SIZE;
+      applyFilter();
+    });
+    box.appendChild(a);
   }
 
   // ---- Active filter chips --------------------------------------------------
