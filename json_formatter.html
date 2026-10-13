@@ -1,8 +1,20 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="dark" data-theme-pref="system">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+/* Theme is resolved here, before the stylesheet paints anything, so a page
+   that should open light doesn't flash dark first. Preference: "system"
+   (default — follow the OS), "light" or "dark". */
+(function(){
+  var pref="system";
+  try{ var p=localStorage.getItem("bracket.themePref"); if(p==="light"||p==="dark"||p==="system") pref=p; }catch(e){}
+  var dark = pref==="dark" || (pref==="system" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.setAttribute("data-theme", dark?"dark":"light");
+  document.documentElement.setAttribute("data-theme-pref", pref);
+})();
+</script>
 <title>Bracket · JSON</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,6 +29,7 @@
   --tk-key:#e6b673; --tk-str:#9ece6a; --tk-num:#ff9e64; --tk-bool:#7aa2f7;
   --tk-null:#bb9af7; --tk-punct:#7a7f96; --tk-summary:#6c6c7c;
   --shadow:0 18px 50px -12px rgba(0,0,0,.6);
+  --add-soft:#5bd6a01c; --add-line:#5bd6a066; --del-soft:#f0656f1e; --del-line:#f0656f6e; --chg-soft:#f5b5441c;
   --font-head:"Space Grotesk",sans-serif; --font-body:"Inter",sans-serif; --font-mono:"JetBrains Mono",monospace;
   --sidebar-w:264px;
 }
@@ -29,9 +42,11 @@ html[data-theme="light"]{
   --tk-key:#a15c00; --tk-str:#448c27; --tk-num:#c5541b; --tk-bool:#2f6fdb;
   --tk-null:#8a3ffc; --tk-punct:#9a9488; --tk-summary:#a39d90;
   --shadow:0 18px 44px -14px rgba(80,60,20,.28);
+  --add-soft:#2f9e6b17; --add-line:#2f9e6b66; --del-soft:#d1424c14; --del-line:#d1424c66; --chg-soft:#c8871a17;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
+html{color-scheme:dark} html[data-theme="light"]{color-scheme:light}
 body{
   margin:0;background:var(--bg);color:var(--text);
   font-family:var(--font-body);font-size:14px;line-height:1.5;
@@ -92,11 +107,18 @@ button{font-family:inherit;color:inherit;cursor:pointer}
   border:1px solid var(--accent-line);border-radius:5px;color:var(--text);
   padding:3px 5px;outline:none;min-width:0;
 }
-.theme-toggle{
-  margin:8px 14px 16px;padding:9px;border:1px solid var(--line);
-  background:transparent;border-radius:9px;font-family:var(--font-mono);
-  font-size:12px;color:var(--text-dim);transition:border-color .15s,color .15s;
+.theme-seg{
+  margin:8px 14px 16px;display:flex;border:1px solid var(--line);border-radius:9px;
+  overflow:hidden;background:transparent;
 }
+.theme-seg button{
+  flex:1;border:none;background:transparent;padding:8px 4px;font-family:var(--font-mono);
+  font-size:11.5px;color:var(--text-dim);transition:background .15s,color .15s;white-space:nowrap;
+}
+.theme-seg button+button{border-left:1px solid var(--line)}
+.theme-seg button:hover{color:var(--text)}
+.theme-seg button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.theme-seg button:focus-visible{outline:2px solid var(--accent-line);outline-offset:-2px}
 .theme-toggle:hover{border-color:var(--accent-line);color:var(--text)}
 
 /* ---------- Main ---------- */
@@ -283,6 +305,148 @@ html[data-theme="light"] .tree-row:hover{background:var(--panel-2)}
 .modal-foot button.primary:hover{filter:brightness(1.08)}
 [hidden]{display:none!important}
 
+/* ---------- Mode switch (top bar) ---------- */
+.mode-switch{display:inline-flex;border:1px solid var(--line-2);border-radius:9px;overflow:hidden;flex:0 0 auto;background:var(--panel)}
+.mode-switch button{
+  border:none;background:transparent;padding:7px 13px;font-family:var(--font-mono);
+  font-size:12px;font-weight:500;color:var(--text-dim);transition:background .13s,color .13s;
+}
+.mode-switch button+button{border-left:1px solid var(--line-2)}
+.mode-switch button:hover{color:var(--text)}
+.mode-switch button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+
+/* ---------- Compare view ---------- */
+.compare{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0}
+.cmp-inputs{
+  flex:0 0 36%;display:flex;min-height:150px;position:relative;
+  border-bottom:1px solid var(--line);
+}
+.compare.inputs-hidden .cmp-inputs{display:none}
+.cmp-pane{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--panel)}
+.cmp-pane+.cmp-pane{border-left:1px solid var(--line)}
+.cmp-pane.drop{outline:2px dashed var(--accent);outline-offset:-6px}
+.cmp-pane .pane-head{gap:9px;justify-content:flex-start}
+.cmp-pane .pane-actions{margin-left:auto}
+.cmp-tag{
+  font-family:var(--font-mono);font-weight:600;font-size:11.5px;width:22px;height:22px;
+  display:grid;place-items:center;border-radius:6px;flex:0 0 auto;
+}
+.cmp-tag.a{background:var(--del-soft);color:var(--red);border:1px solid var(--del-line)}
+.cmp-tag.b{background:var(--add-soft);color:var(--green);border:1px solid var(--add-line)}
+.cmp-src{
+  font-family:var(--font-mono);font-size:11.5px;background:var(--bg-2);color:var(--text-dim);
+  border:1px solid var(--line-2);border-radius:7px;padding:4px 7px;max-width:190px;min-width:0;outline:none;
+}
+.cmp-src:focus{border-color:var(--accent-line)}
+.cmp-state{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cmp-state.ok{color:var(--green)} .cmp-state.bad{color:var(--red)}
+.cmp-editor{font-size:12.5px;padding:12px 14px}
+.cmp-swap{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;
+  width:30px;height:30px;border-radius:50%;border:1px solid var(--line-2);
+  background:var(--panel-2);color:var(--text-dim);font-size:13px;display:grid;place-items:center;
+  box-shadow:var(--shadow);transition:color .13s,border-color .13s,transform .2s;
+}
+.cmp-swap:hover{color:var(--accent);border-color:var(--accent-line);transform:translate(-50%,-50%) rotate(180deg)}
+
+.cmp-bar{
+  display:flex;flex-direction:column;gap:8px;padding:10px 14px;
+  border-bottom:1px solid var(--line);background:var(--bg-2);flex:0 0 auto;
+}
+.cmp-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cmp-row .grow{flex:1}
+.cmp-label{font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);letter-spacing:1.2px;text-transform:uppercase}
+.seg{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:none;background:transparent;padding:5px 10px;font-family:var(--font-mono);font-size:11.5px;color:var(--text-dim)}
+.seg button+button{border-left:1px solid var(--line-2)}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--panel-2);color:var(--text);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.cmp-input{
+  font-family:var(--font-mono);font-size:12px;background:var(--bg);color:var(--text);
+  border:1px solid var(--line-2);border-radius:8px;padding:6px 9px;outline:none;min-width:0;
+}
+.cmp-input:focus{border-color:var(--accent-line)}
+.cmp-input::placeholder{color:var(--text-faint)}
+.cmp-input.key{width:120px}
+.cmp-input.ignore{width:220px}
+.cmp-input.search{flex:1;min-width:160px}
+.cmp-btn{
+  border:1px solid var(--line-2);background:var(--panel);border-radius:8px;padding:5px 10px;
+  font-family:var(--font-mono);font-size:11.5px;color:var(--text-dim);transition:border-color .13s,color .13s;
+}
+.cmp-btn:hover:not(:disabled){border-color:var(--accent-line);color:var(--text)}
+.cmp-btn:disabled{opacity:.4;cursor:default}
+.cmp-nav{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);min-width:54px;text-align:center}
+
+/* Summary chips — also the category filters */
+.sum-chip{
+  display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 11px;
+  font-family:var(--font-mono);font-size:12px;font-weight:600;border:1px solid transparent;
+  transition:opacity .13s,box-shadow .13s;
+}
+.sum-chip .n{font-size:13px}
+.sum-chip .l{font-weight:400;opacity:.85}
+.sum-chip.add{background:var(--add-soft);color:var(--green);border-color:var(--add-line)}
+.sum-chip.del{background:var(--del-soft);color:var(--red);border-color:var(--del-line)}
+.sum-chip.chg{background:var(--chg-soft);color:var(--accent);border-color:var(--accent-line)}
+.sum-chip.same{background:var(--panel);color:var(--text-dim);border-color:var(--line-2)}
+.sum-chip.dim{opacity:.38}
+.sum-chip.iso{box-shadow:0 0 0 2px var(--bg-2),0 0 0 3.5px currentColor}
+.sum-chip:disabled{cursor:default}
+
+/* Result tree */
+.cmp-result{flex:1;overflow:auto;padding:10px 8px 60px 6px;font-family:var(--font-mono);font-size:13px;min-height:0;background:var(--bg)}
+.cmp-empty{padding:34px 22px;color:var(--text-faint);font-size:13px;max-width:560px;line-height:1.65}
+.cmp-empty b{color:var(--text);font-weight:600}
+.cmp-empty.bad b{color:var(--red)}
+.cmp-same{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:40px 24px}
+.cmp-same .big{font-family:var(--font-head);font-weight:700;font-size:22px;color:var(--green);letter-spacing:-.3px}
+.cmp-same .sub{color:var(--text-dim);font-size:13px;font-family:var(--font-body)}
+
+.dnode{position:relative}
+/* Row parts wrap onto the next line as whole units instead of each being
+   squeezed until a key breaks mid-word; only a long value may break inside. */
+.drow{flex-wrap:wrap}
+.drow>*{flex-shrink:0;max-width:100%}
+.cmp-grp{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.drow{
+  display:flex;align-items:flex-start;gap:2px;padding:2px 8px 2px 0;border-radius:5px;
+  cursor:pointer;white-space:pre-wrap;word-break:break-word;position:relative;
+  border-left:3px solid transparent;
+}
+.drow:hover{background:var(--panel)}
+html[data-theme="light"] .drow:hover{background:var(--panel-2)}
+.drow.st-added{background:var(--add-soft);border-left-color:var(--green)}
+.drow.st-removed{background:var(--del-soft);border-left-color:var(--red)}
+.drow.st-changed.leaf{background:var(--chg-soft);border-left-color:var(--accent)}
+.drow.st-added:hover,.drow.st-removed:hover,.drow.st-changed.leaf:hover{filter:brightness(1.12)}
+html[data-theme="light"] .drow.st-added:hover,html[data-theme="light"] .drow.st-removed:hover,
+html[data-theme="light"] .drow.st-changed.leaf:hover{filter:brightness(.97)}
+.dnode.inherited>.drow{background:transparent;border-left-color:transparent}
+.dnode.inherited.in-added>.drow .tk-key,.dnode.inherited.in-added>.drow .dval{opacity:.92}
+.dmark{flex:0 0 auto;width:16px;text-align:center;font-weight:600;user-select:none}
+.st-added>.dmark{color:var(--green)} .st-removed>.dmark{color:var(--red)} .st-changed>.dmark{color:var(--accent)}
+.st-same>.dmark{color:var(--text-faint)}
+.dnode .twisty{margin-top:5px}
+.dnode.collapsed>.drow>.twisty{transform:rotate(0deg)}
+.dchildren{margin-left:22px;padding-left:10px;border-left:1px solid var(--line)}
+.dnode:hover>.dchildren{border-left-color:var(--accent-line)}
+.dnode.collapsed>.dchildren{display:none}
+.dkey-idx{color:var(--text-faint)}
+.dold{background:var(--del-soft);border-radius:4px;padding:0 4px;text-decoration:line-through;text-decoration-color:var(--del-line)}
+.dnew{background:var(--add-soft);border-radius:4px;padding:0 4px}
+.darrow{color:var(--text-faint);padding:0 7px}
+.dsum{color:var(--tk-summary);font-style:italic;padding:0 4px}
+.dbadge{
+  margin-left:8px;font-size:10.5px;font-style:normal;border-radius:4px;padding:0 6px;white-space:nowrap;
+  border:1px solid var(--line-2);color:var(--text-faint);align-self:center;line-height:17px;
+}
+.dbadge.chg{border-color:var(--accent-line);color:var(--accent)}
+.dbadge.warn{border-color:var(--del-line);color:var(--red)}
+.dtype{font-size:10.5px;color:var(--text-faint);padding-left:6px;align-self:center}
+.dnode.focus>.drow{outline:2px solid var(--accent);outline-offset:-1px}
+.cmp-result mark{background:var(--accent);color:#12120c;border-radius:2px;padding:0 1px}
+
 /* ---------- Responsive ---------- */
 @media (max-width:820px){
   .sidebar{position:fixed;top:0;bottom:0;left:0;margin-left:calc(-1 * var(--sidebar-w))!important;box-shadow:var(--shadow)}
@@ -291,6 +455,23 @@ html[data-theme="light"] .tree-row:hover{background:var(--panel-2)}
   .workspace{flex-direction:column}
   .editor-pane{border-right:none;border-bottom:1px solid var(--line);flex:0 0 42%}
   .pane-actions button{padding:5px 7px}
+  .cmp-inputs{flex-direction:column;flex:0 0 40%}
+  .cmp-pane+.cmp-pane{border-left:none;border-top:1px solid var(--line)}
+  /* stacked panes: park the swap button on the seam at the right edge, not on top of A's text */
+  .cmp-swap{left:auto;right:12px;transform:translateY(-50%)}
+  .cmp-swap:hover{transform:translateY(-50%) rotate(180deg)}
+  .cmp-pane .pane-head{flex-wrap:nowrap;padding:7px 10px}
+  .cmp-pane .pane-actions{flex-wrap:nowrap}
+  .cmp-src{max-width:120px}
+  .cmp-bar{padding:8px 10px;gap:7px}
+  .cmp-input.key{flex:1;width:auto}
+  .ignore-grp{flex:1 1 100%}
+  .ignore-grp .cmp-label{margin-left:0!important}
+  .cmp-input.ignore{flex:1;width:auto}
+  .cmp-row>*{max-width:100%}
+  .app.cmp-on .status-stats{display:none}
+  .mode-switch button{padding:7px 9px}
+  .btn-generate{padding:8px 10px}
 }
 @media (prefers-reduced-motion:reduce){
   *{transition:none!important;animation:none!important}
@@ -311,13 +492,21 @@ html[data-theme="light"] .tree-row:hover{background:var(--panel-2)}
     </div>
     <button class="btn-new" id="newDoc">+ New JSON</button>
     <div class="doc-list" id="docList"></div>
-    <button class="theme-toggle" id="themeToggle">◐ Toggle theme</button>
+    <div class="theme-seg" id="themeSeg" role="radiogroup" aria-label="Theme">
+      <button data-pref="system" role="radio" title="Follow your computer's light / dark setting">◐ System</button>
+      <button data-pref="light" role="radio" title="Always light">☀ Light</button>
+      <button data-pref="dark" role="radio" title="Always dark">☾ Dark</button>
+    </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
       <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar">☰</button>
       <div class="doc-name" id="docName" title="Double-click to rename">Untitled</div>
+      <div class="mode-switch" role="tablist" aria-label="View">
+        <button id="modeEdit" class="on" role="tab">{ } Format</button>
+        <button id="modeCompare" role="tab" title="Compare two JSON documents key by key">⇄ Compare</button>
+      </div>
       <button class="btn-generate" id="openGen">✦ Generate</button>
     </header>
 
@@ -348,6 +537,72 @@ html[data-theme="light"] .tree-row:hover{background:var(--panel-2)}
         <div class="path-bar" id="pathBar"><span class="path-empty">hover a node to see its path · click to copy</span></div>
         <div class="tree" id="tree"></div>
       </div>
+    </section>
+
+    <section class="compare" id="compareView" hidden>
+      <div class="cmp-inputs" id="cmpInputs">
+        <div class="cmp-pane" data-side="a">
+          <div class="pane-head">
+            <span class="cmp-tag a">A</span>
+            <select class="cmp-src" data-side="a" title="Load a saved document into A"></select>
+            <span class="cmp-state" id="cmpStateA"></span>
+            <div class="pane-actions">
+              <button data-cact="format" data-side="a">Format</button>
+              <button data-cact="clear" data-side="a">Clear</button>
+            </div>
+          </div>
+          <textarea class="editor cmp-editor" id="cmpA" spellcheck="false"
+            placeholder="Original — paste JSON, pick a saved document above, or drop a .json file here"></textarea>
+        </div>
+        <button class="cmp-swap" id="cmpSwap" title="Swap A and B">⇄</button>
+        <div class="cmp-pane" data-side="b">
+          <div class="pane-head">
+            <span class="cmp-tag b">B</span>
+            <select class="cmp-src" data-side="b" title="Load a saved document into B"></select>
+            <span class="cmp-state" id="cmpStateB"></span>
+            <div class="pane-actions">
+              <button data-cact="format" data-side="b">Format</button>
+              <button data-cact="clear" data-side="b">Clear</button>
+            </div>
+          </div>
+          <textarea class="editor cmp-editor" id="cmpB" spellcheck="false"
+            placeholder="Compared — paste JSON, pick a saved document above, or drop a .json file here"></textarea>
+        </div>
+      </div>
+
+      <div class="cmp-bar">
+        <div class="cmp-row">
+          <button class="sum-chip add" data-cat="1" title="Keys only in B — click to show only these"><span class="n" id="cntAdd">0</span><span class="l">added</span></button>
+          <button class="sum-chip del" data-cat="2" title="Keys only in A — click to show only these"><span class="n" id="cntDel">0</span><span class="l">removed</span></button>
+          <button class="sum-chip chg" data-cat="4" title="Keys in both with a different value — click to show only these"><span class="n" id="cntChg">0</span><span class="l">changed</span></button>
+          <button class="sum-chip same" data-cat="8" title="Keys in both with the same value — click to show only these"><span class="n" id="cntSame">0</span><span class="l">same</span></button>
+          <span class="grow"></span>
+          <div class="seg" id="cmpView">
+            <button data-view="diff" class="on">Differences</button>
+            <button data-view="all">Everything</button>
+          </div>
+          <button class="cmp-btn" id="cmpPrev" title="Previous difference (p)">↑</button>
+          <span class="cmp-nav" id="cmpNavPos">–</span>
+          <button class="cmp-btn" id="cmpNext" title="Next difference (n)">↓</button>
+          <button class="cmp-btn" id="cmpCopy" title="Copy a plain-text list of every difference">Copy report</button>
+          <button class="cmp-btn" id="cmpToggleInputs" title="Hide or show the A / B inputs">⌃ Inputs</button>
+        </div>
+        <div class="cmp-row">
+          <span class="cmp-label">Arrays</span>
+          <div class="seg" id="cmpArrMode">
+            <button data-am="index" class="on" title="Pair items by position: [0] with [0], [1] with [1]…">By position</button>
+            <button data-am="key" title="Pair items by a field such as id, so a different order isn't reported as a change">By key</button>
+          </div>
+          <input class="cmp-input key" id="cmpKey" placeholder="key: auto" spellcheck="false" autocomplete="off"
+            title="Field to match array items on. Leave empty to detect it (id, uuid, code, payRefNo…)" disabled>
+          <span class="cmp-grp ignore-grp"><span class="cmp-label" style="margin-left:6px">Ignore</span>
+          <input class="cmp-input ignore" id="cmpIgnore" placeholder="keys, e.g. timestamp, traceId" spellcheck="false" autocomplete="off"
+            title="Comma-separated key names to leave out of the comparison at any depth — fields that always differ between two responses"></span>
+          <input class="cmp-input search" id="cmpSearch" placeholder="Filter by path or value…" spellcheck="false" autocomplete="off">
+        </div>
+      </div>
+      <div class="path-bar" id="cmpPathBar"><span class="path-empty">hover a row to see its path · click to copy</span></div>
+      <div class="cmp-result" id="cmpResult"></div>
     </section>
 
     <footer class="statusbar" id="statusbar">
@@ -747,8 +1002,6 @@ let collapsedPaths={};   // per active doc: {path:true} = collapsed
 
 /* ---- load persisted state ---- */
 function loadState(){
-  const theme=store.get("bracket.theme");
-  if(theme) document.documentElement.setAttribute("data-theme",theme);
   const ed=store.get("bracket.editorCollapsed");
   if(ed==="1") $("#workspace").classList.add("editor-hidden"), $("#showEditor").hidden=false;
   try{
@@ -767,7 +1020,6 @@ function persist(){
   saveTimer=setTimeout(()=>{
     store.set("bracket.docs",JSON.stringify(docs));
     store.set("bracket.active",activeId);
-    store.set("bracket.theme",document.documentElement.getAttribute("data-theme"));
     store.set("bracket.editorCollapsed",$("#workspace").classList.contains("editor-hidden")?"1":"0");
   },160);
 }
@@ -817,6 +1069,7 @@ function startRename(item,d){
 
 /* ============================ Doc actions ============================ */
 function selectDoc(id){
+  if(CMP.mode==="compare") setMode("edit");
   activeId=id; collapsedPaths={};
   const d=activeDoc();
   $("#editor").value=d.content;
@@ -825,6 +1078,7 @@ function selectDoc(id){
   persist();
 }
 function newDoc(){
+  if(CMP.mode==="compare") setMode("edit");
   const d={id:uid(),name:"",renamed:false,content:""};
   docs.unshift(d); activeId=d.id; collapsedPaths={};
   $("#editor").value=""; refreshTopName(); renderSidebar(); refresh();
@@ -841,11 +1095,14 @@ function deleteDoc(id){
 
 /* ============================ Top bar name ============================ */
 function refreshTopName(){
+  // In Compare the title names the two sides being compared instead.
+  if(typeof CMP!=="undefined" && CMP.mode==="compare"){ cmpTitle(); return; }
   const d=activeDoc();
   $("#docName").textContent=docLabel(d);
   $("#docName").title="Double-click to rename";
 }
 function startTopRename(){
+  if(CMP.mode==="compare") return;
   const el=$("#docName");
   const d=activeDoc();
   const input=document.createElement("input");
@@ -1004,6 +1261,7 @@ function refresh(){
   refreshTopName();
   updateSidebarDot();
   persist();
+  if(CMP.mode==="compare") cmpStatus();
 }
 function updateSidebarDot(){
   const item=$('.doc-item[data-id="'+activeId+'"]');
@@ -1085,6 +1343,841 @@ function runGen(){
   toast("Generated "+count+" records");
 }
 
+/* ============================ JSON diff ============================ */
+/* Compares two parsed JSON values key by key and value by value, and returns a
+   tree of nodes — one per path present on either side — each carrying a
+   status:
+
+     same     present on both sides with an equal value
+     changed  present on both sides, different value (or different type)
+     added    only in B
+     removed  only in A
+
+   Objects are compared by key, so key order never counts as a difference.
+   Arrays are paired up either by position, or by a matching key field so that
+   two API responses listing the same records in a different order line up
+   record-for-record instead of reading as "everything changed". */
+
+const DIFF = { ADDED: 1, REMOVED: 2, CHANGED: 4, SAME: 8 };
+const DIFF_ALL = 15, DIFF_DIFFS = DIFF.ADDED | DIFF.REMOVED | DIFF.CHANGED;
+
+// Field names that identify a record, tried first when auto-detecting the key
+// an array should be matched on. Anything else present and unique in every
+// item is considered after these.
+const DIFF_KEY_PREFERRED = ["id", "_id", "uuid", "guid", "key", "code", "requestId", "RequestId",
+  "payRefNo", "transactionId", "txnId", "referenceNo", "refNo", "accountNo", "sku", "email", "name"];
+
+function dTypeOf(v) {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "array";
+  return typeof v;
+}
+function dIsContainer(v) { const t = dTypeOf(v); return t === "object" || t === "array"; }
+function dIsPrimitive(v) { return !dIsContainer(v); }
+
+// Every item must be an object carrying `k` with a primitive value, and those
+// values must be unique — otherwise matching on it would pair the wrong items.
+function dUniqueBy(arr, k) {
+  const seen = new Set();
+  for (const it of arr) {
+    if (dTypeOf(it) !== "object" || !(k in it) || !dIsPrimitive(it[k])) return false;
+    const sig = dTypeOf(it[k]) + ":" + String(it[k]);
+    if (seen.has(sig)) return false;
+    seen.add(sig);
+  }
+  return true;
+}
+
+function dDetectKey(a, b) {
+  const items = a.concat(b);
+  if (!items.length || !items.every(x => dTypeOf(x) === "object")) return null;
+  const common = Object.keys(items[0]).filter(k => items.every(it => k in it && dIsPrimitive(it[k])));
+  const ordered = DIFF_KEY_PREFERRED.filter(k => common.includes(k))
+    .concat(common.filter(k => !DIFF_KEY_PREFERRED.includes(k)));
+  for (const k of ordered) if (dUniqueBy(a, k) && dUniqueBy(b, k)) return k;
+  return null;
+}
+
+function dEqualPrim(a, b) {
+  // NaN can't appear in JSON; strict equality is exact for everything else.
+  return a === b;
+}
+
+function dSegKey(k) {
+  // Same path notation as the tree view: .name, or ["odd key"] when the key
+  // wouldn't read cleanly after a dot.
+  return /^[A-Za-z_$][\w$]*$/.test(k) ? "." + k : "[" + JSON.stringify(k) + "]";
+}
+
+/* opts: { arrayMode: "index"|"key", arrayKey: "" (auto) | field, ignore: Set<string> } */
+function diffJson(a, b, opts) {
+  opts = opts || {};
+  const o = {
+    arrayMode: opts.arrayMode === "key" ? "key" : "index",
+    arrayKey: (opts.arrayKey || "").trim(),
+    ignore: opts.ignore instanceof Set ? opts.ignore : new Set(opts.ignore || [])
+  };
+  const root = dNode(null, "", a, b, o, true, true);
+  return root;
+}
+
+function dNode(key, path, a, b, o, hasA, hasB) {
+  const n = { key, path, a, b, hasA, hasB, status: "same", kind: "value", children: null, mask: 0, matchedBy: null };
+
+  if (hasA && !hasB) {
+    n.status = "removed";
+    n.mask = DIFF.REMOVED;
+    if (dIsContainer(a)) { n.kind = dTypeOf(a); n.children = dOneSided(a, path, o, "a"); }
+    return n;
+  }
+  if (!hasA && hasB) {
+    n.status = "added";
+    n.mask = DIFF.ADDED;
+    if (dIsContainer(b)) { n.kind = dTypeOf(b); n.children = dOneSided(b, path, o, "b"); }
+    return n;
+  }
+
+  const ta = dTypeOf(a), tb = dTypeOf(b);
+  if (ta !== tb) {
+    // An object became an array, a number became a string, a value became
+    // null… Reported as one change at this path, with both sides shown,
+    // rather than descending into structures that no longer correspond.
+    n.status = "changed";
+    n.typeChange = true;
+    n.mask = DIFF.CHANGED;
+    return n;
+  }
+
+  if (ta === "object") {
+    n.kind = "object";
+    const keys = [];
+    const seen = new Set();
+    for (const k of Object.keys(a)) { if (!o.ignore.has(k)) { keys.push(k); seen.add(k); } }
+    for (const k of Object.keys(b)) { if (!o.ignore.has(k) && !seen.has(k)) keys.push(k); }
+    n.children = keys.map(k => dNode(k, path + dSegKey(k), a[k], b[k], o, k in a, k in b));
+  } else if (ta === "array") {
+    n.kind = "array";
+    n.children = dArrayChildren(n, a, b, path, o);
+  } else {
+    n.mask = dEqualPrim(a, b) ? DIFF.SAME : DIFF.CHANGED;
+    n.status = n.mask === DIFF.SAME ? "same" : "changed";
+    return n;
+  }
+
+  if (!n.children.length) { n.mask = DIFF.SAME; n.status = "same"; return n; }
+  for (const c of n.children) n.mask |= c.mask;
+  n.status = (n.mask & DIFF_DIFFS) ? "changed" : "same";
+  return n;
+}
+
+function dArrayChildren(n, a, b, path, o) {
+  if (o.arrayMode === "key") {
+    let k = o.arrayKey;
+    const usable = k
+      ? (a.concat(b).every(x => dTypeOf(x) === "object") && dUniqueBy(a, k) && dUniqueBy(b, k))
+      : !!(k = dDetectKey(a, b));
+    if (usable && k) {
+      n.matchedBy = k;
+      const mapB = new Map();
+      b.forEach((it, i) => mapB.set(dTypeOf(it[k]) + ":" + String(it[k]), i));
+      const usedB = new Set();
+      const out = [];
+      a.forEach((it, i) => {
+        const sig = dTypeOf(it[k]) + ":" + String(it[k]);
+        const label = "[" + k + "=" + (typeof it[k] === "string" ? JSON.stringify(it[k]) : String(it[k])) + "]";
+        if (mapB.has(sig)) {
+          const j = mapB.get(sig);
+          usedB.add(j);
+          const c = dNode(label, path + label, it, b[j], o, true, true);
+          c.idxA = i; c.idxB = j;
+          out.push(c);
+        } else {
+          const c = dNode(label, path + label, it, undefined, o, true, false);
+          c.idxA = i;
+          out.push(c);
+        }
+      });
+      b.forEach((it, j) => {
+        if (usedB.has(j)) return;
+        const label = "[" + k + "=" + (typeof it[k] === "string" ? JSON.stringify(it[k]) : String(it[k])) + "]";
+        const c = dNode(label, path + label, undefined, it, o, false, true);
+        c.idxB = j;
+        out.push(c);
+      });
+      return out;
+    }
+    // Asked to match by key but this array can't be keyed (not all objects, or
+    // no field unique on both sides) — say so and fall back to position.
+    n.matchedBy = null;
+    n.keyFallback = true;
+  }
+  const len = Math.max(a.length, b.length);
+  const out = [];
+  for (let i = 0; i < len; i++) {
+    const c = dNode("[" + i + "]", path + "[" + i + "]", a[i], b[i], o, i < a.length, i < b.length);
+    c.idxA = i < a.length ? i : undefined;
+    c.idxB = i < b.length ? i : undefined;
+    out.push(c);
+  }
+  return out;
+}
+
+// Children of a container that exists on only one side: every descendant
+// inherits the parent's status so the subtree can be expanded and read.
+function dOneSided(v, path, o, side) {
+  const status = side === "a" ? "removed" : "added";
+  const mask = side === "a" ? DIFF.REMOVED : DIFF.ADDED;
+  const entries = Array.isArray(v) ? v.map((x, i) => ["[" + i + "]", x, path + "[" + i + "]"])
+    : Object.keys(v).filter(k => !o.ignore.has(k)).map(k => [k, v[k], path + dSegKey(k)]);
+  return entries.map(([k, x, p]) => {
+    const c = { key: k, path: p, a: side === "a" ? x : undefined, b: side === "b" ? x : undefined,
+      hasA: side === "a", hasB: side === "b", status, mask, kind: dIsContainer(x) ? dTypeOf(x) : "value",
+      children: null, inherited: true };
+    if (dIsContainer(x)) c.children = dOneSided(x, p, o, side);
+    return c;
+  });
+}
+
+/* Counts what a person would call "a difference": a key that was added or
+   removed counts once (not once per leaf inside it), a changed scalar or a
+   type change counts once, an equal scalar counts as same. */
+function diffCounts(root) {
+  const c = { added: 0, removed: 0, changed: 0, same: 0 };
+  (function walk(n) {
+    if (n.inherited) return;
+    if (n.status === "added") { c.added++; return; }
+    if (n.status === "removed") { c.removed++; return; }
+    if (n.typeChange) { c.changed++; return; }
+    if (n.children && n.children.length) { n.children.forEach(walk); return; }
+    if (n.status === "changed") c.changed++; else c.same++;
+  })(root);
+  return c;
+}
+
+/* A flat list of the differences, in tree order — what the report and the
+   next/previous navigation walk through. */
+function diffList(root) {
+  const out = [];
+  (function walk(n) {
+    if (n.inherited) return;
+    if (n.status === "added" || n.status === "removed" || n.typeChange) { out.push(n); return; }
+    if (n.children && n.children.length) { n.children.forEach(walk); return; }
+    if (n.status === "changed") out.push(n);
+  })(root);
+  return out;
+}
+
+// Paths are built with a leading "." on keys (".data.amt"); shown without it,
+// matching the tree view's "data.amt".
+function dispPath(p) { return (p || "").replace(/^\./, "") || "(root)"; }
+
+function dShort(v, max) {
+  max = max || 120;
+  let s;
+  if (v === undefined) s = "∅";
+  else {
+    s = JSON.stringify(v);
+    // A small added/removed record is worth printing in full; a large one is
+    // summarised rather than flooding the report.
+    if (dIsContainer(v) && s.length > max) {
+      s = Array.isArray(v) ? "[" + v.length + " item" + (v.length === 1 ? "" : "s") + "]"
+        : "{" + Object.keys(v).length + " key" + (Object.keys(v).length === 1 ? "" : "s") + "}";
+    }
+  }
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+function diffReport(root, labelA, labelB) {
+  const c = diffCounts(root);
+  const lines = [];
+  lines.push("JSON comparison — A: " + labelA + "  ·  B: " + labelB);
+  lines.push("+" + c.added + " added   −" + c.removed + " removed   ~" + c.changed + " changed   =" + c.same + " same");
+  lines.push("");
+  const list = diffList(root);
+  if (!list.length) lines.push("No differences.");
+  list.forEach(n => {
+    const p = dispPath(n.path);
+    if (n.status === "added") lines.push("+ " + p + ": " + dShort(n.b));
+    else if (n.status === "removed") lines.push("- " + p + ": " + dShort(n.a));
+    else lines.push("~ " + p + ": " + dShort(n.a) + "  →  " + dShort(n.b) +
+      (n.typeChange ? "   (" + dTypeOf(n.a) + " → " + dTypeOf(n.b) + ")" : ""));
+  });
+  return lines.join("\n");
+}
+
+/* ============================ Compare view ============================ */
+const CMP = {
+  mode: "edit",
+  root: null, counts: null, list: [], navIdx: -1, byIndex: [],
+  view: "diff",          // "diff" = differences only, "all" = everything
+  iso: 0,                // a single category isolated from the summary chips, or 0
+  arrayMode: "index", arrayKey: "", ignore: "", search: "",
+  src: { a: null, b: null },
+  collapsed: {},         // path -> true/false, only where the user toggled
+  inputsHidden: false,
+  parsed: { a: null, b: null }
+};
+
+const cmpEl = side => $(side === "a" ? "#cmpA" : "#cmpB");
+
+function cmpLabel(side) {
+  const id = CMP.src[side];
+  const d = id && docs.find(x => x.id === id);
+  return d ? docLabel(d) : (side === "a" ? "A" : "B");
+}
+function cmpTitle() {
+  const el = $("#docName");
+  el.textContent = cmpLabel("a") + "  ⇄  " + cmpLabel("b");
+  el.title = "Comparing A with B";
+}
+
+/* ---- mode ---- */
+function setMode(m) {
+  CMP.mode = m === "compare" ? "compare" : "edit";
+  const cmp = CMP.mode === "compare";
+  $("#workspace").hidden = cmp;
+  $("#compareView").hidden = !cmp;
+  $("#openGen").hidden = cmp;
+  $("#modeEdit").classList.toggle("on", !cmp);
+  $("#modeCompare").classList.toggle("on", cmp);
+  $("#app").classList.toggle("cmp-on", cmp);
+  store.set("bracket.mode", CMP.mode);
+  if (cmp) {
+    // First visit: start with the document you were looking at as A, so the
+    // only thing left to do is paste the other one.
+    if (!cmpEl("a").value.trim() && !cmpEl("b").value.trim()) {
+      const d = activeDoc();
+      if (d && d.content.trim()) { cmpEl("a").value = d.content; CMP.src.a = d.id; }
+    }
+    cmpFillSources();
+    cmpRun();
+    setTimeout(() => cmpEl(cmpEl("a").value.trim() ? "b" : "a").focus(), 0);
+  } else {
+    refreshTopName();
+    refresh();
+  }
+}
+
+/* ---- sources: saved documents as one-click inputs ---- */
+function cmpFillSources() {
+  document.querySelectorAll(".cmp-src").forEach(sel => {
+    const side = sel.dataset.side;
+    const cur = CMP.src[side];
+    sel.innerHTML = '<option value="">Pasted text</option>' +
+      docs.map(d => '<option value="' + d.id + '">' + esc(docLabel(d)) + "</option>").join("");
+    sel.value = cur && docs.some(d => d.id === cur) ? cur : "";
+    if (!sel.value) CMP.src[side] = null;
+  });
+}
+
+/* ---- parse + diff ---- */
+const cmpCache = { a: { text: null, v: null }, b: { text: null, v: null } };
+function cmpParse(side) {
+  const text = cmpEl(side).value;
+  // Typing in A shouldn't re-parse an unchanged B — with large responses the
+  // parse is the dominant cost of each update.
+  let v;
+  if (cmpCache[side].text === text) v = cmpCache[side].v;
+  else { v = validate(text); cmpCache[side] = { text, v }; }
+  const st = $(side === "a" ? "#cmpStateA" : "#cmpStateB");
+  st.className = "cmp-state";
+  if (v.state === "empty") { st.textContent = "empty"; return null; }
+  if (v.state === "invalid") {
+    st.classList.add("bad");
+    st.textContent = "invalid · line " + v.error.line + ", col " + v.error.col;
+    st.title = v.error.message;
+    return { error: v.error };
+  }
+  st.classList.add("ok");
+  const s = computeStats(v.value);
+  st.textContent = "valid · " + s.keys + " keys · " + humanBytes(byteSize(text));
+  st.title = "";
+  return { value: v.value };
+}
+
+function cmpIgnoreSet() {
+  return new Set(CMP.ignore.split(/[,\s]+/).map(x => x.trim()).filter(Boolean));
+}
+
+let cmpDeb;
+function cmpRunSoon() {
+  clearTimeout(cmpDeb);
+  // Wait for a pause in typing that scales with the input: a small document
+  // updates almost live, a multi-megabyte one doesn't recompute per keystroke.
+  const size = cmpEl("a").value.length + cmpEl("b").value.length;
+  cmpDeb = setTimeout(cmpRun, size > 2e6 ? 700 : size > 4e5 ? 450 : 220);
+}
+
+function cmpRun() {
+  CMP.parsed.a = cmpParse("a");
+  CMP.parsed.b = cmpParse("b");
+  const A = CMP.parsed.a, B = CMP.parsed.b;
+  CMP.root = null; CMP.counts = null;
+  if (A && B && !A.error && !B.error) {
+    CMP.root = diffJson(A.value, B.value, {
+      arrayMode: CMP.arrayMode, arrayKey: CMP.arrayKey, ignore: cmpIgnoreSet()
+    });
+    cmpIndex(CMP.root);
+    CMP.counts = diffCounts(CMP.root);
+  }
+  cmpRender();
+  cmpTitle();
+  cmpStatus();
+  cmpPersist();
+}
+
+// Numbers every node, links it to its parent, and counts the differences
+// beneath each container so it can say "3 differences" while collapsed.
+function cmpIndex(root) {
+  CMP.byIndex = [];
+  (function walk(n, parent) {
+    n.i = CMP.byIndex.length;
+    n.parent = parent;
+    CMP.byIndex.push(n);
+    n.diffs = 0;
+    if (n.children) n.children.forEach(c => { walk(c, n); });
+    if (n.inherited) return;
+    if (n.status === "added" || n.status === "removed" || n.typeChange) n.diffs = 1;
+    else if (n.children && n.children.length) n.diffs = n.children.reduce((t, c) => t + (c.diffs || 0), 0);
+    else n.diffs = n.status === "changed" ? 1 : 0;
+  })(root, null);
+}
+
+function cmpVisMask() {
+  if (CMP.iso) return CMP.iso;
+  return CMP.view === "diff" ? DIFF_DIFFS : DIFF_ALL;
+}
+
+/* ---- search ---- */
+function cmpTextOf(n) {
+  const bits = [dispPath(n.path)];
+  if (n.hasA && !dIsContainer(n.a)) bits.push(JSON.stringify(n.a));
+  if (n.hasB && !dIsContainer(n.b)) bits.push(JSON.stringify(n.b));
+  return bits.join("\n").toLowerCase();
+}
+function cmpMarkHits(q) {
+  CMP.byIndex.forEach(n => { n.selfHit = false; n.hit = false; });
+  if (!q) return;
+  for (let i = CMP.byIndex.length - 1; i >= 0; i--) {
+    const n = CMP.byIndex[i];
+    n.selfHit = cmpTextOf(n).indexOf(q) !== -1;
+    if (n.selfHit || n.hit) {
+      n.hit = true;
+      if (n.parent) n.parent.hit = true;
+    }
+  }
+}
+
+function cmpVisible(n, vis, q) {
+  if (!(n.mask & vis)) return false;
+  if (q && !n.hit) return false;
+  return true;
+}
+
+function cmpIsOpen(n, q) {
+  if (n.path in CMP.collapsed) return !CMP.collapsed[n.path];
+  if (q) return n.hit && !n.selfHit ? true : !!(n.children && n.children.some(c => c.hit));
+  if (n.inherited) return false;
+  if (n.status === "added" || n.status === "removed") return false;
+  return !!(n.mask & DIFF_DIFFS & cmpVisMask());
+}
+
+/* ---- rendering ---- */
+function hlText(text, q) {
+  const e = esc(text);
+  if (!q) return e;
+  const re = new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig");
+  return e.replace(re, "<mark>$1</mark>");
+}
+function dVal(v, q) {
+  if (v === null) return '<span class="tk-null">' + hlText("null", q) + "</span>";
+  const t = typeof v;
+  if (t === "string") return '<span class="tk-str">' + hlText(JSON.stringify(v), q) + "</span>";
+  if (t === "number") return '<span class="tk-num">' + hlText(String(v), q) + "</span>";
+  if (t === "boolean") return '<span class="tk-bool">' + hlText(String(v), q) + "</span>";
+  if (Array.isArray(v)) return '<span class="tk-punct">[</span><span class="dsum">' + v.length + (v.length === 1 ? " item" : " items") + '</span><span class="tk-punct">]</span>';
+  const k = Object.keys(v).length;
+  return '<span class="tk-punct">{</span><span class="dsum">' + k + (k === 1 ? " key" : " keys") + '</span><span class="tk-punct">}</span>';
+}
+
+function cmpRowHtml(n, q, open) {
+  const isCont = !n.typeChange && n.children && n.children.length;
+  const leaf = !isCont;
+  const st = n.status;
+  const mark = n.inherited ? "" : st === "added" ? "+" : st === "removed" ? "−" : st === "changed" ? "~" : "·";
+  let h = '<div class="drow st-' + st + (leaf ? " leaf" : "") + '">';
+  h += '<span class="dmark">' + mark + "</span>";
+  h += '<span class="twisty' + (isCont ? "" : " leaf") + '">▸</span>';
+  if (n.key !== null && n.key !== undefined) {
+    if (n.key.charAt(0) === "[") h += '<span class="dkey-idx">' + hlText(n.key, q) + "</span>&nbsp;";
+    else h += '<span class="tk-key">"' + hlText(n.key, q) + '"</span><span class="tk-colon">:</span>';
+  }
+  if (n.typeChange) {
+    h += '<span class="dold">' + dVal(n.a, q) + '</span><span class="darrow">→</span><span class="dnew">' + dVal(n.b, q) + "</span>";
+    h += '<span class="dtype">' + dTypeOf(n.a) + " → " + dTypeOf(n.b) + "</span>";
+  } else if (isCont || (n.kind !== "value" && !n.children)) {
+    const v = n.hasB ? n.b : n.a;
+    h += dVal(v, q);
+    if (!n.inherited && st === "changed" && n.diffs) {
+      h += '<span class="dbadge chg">' + n.diffs + (n.diffs === 1 ? " difference" : " differences") + "</span>";
+    }
+    if (n.matchedBy) h += '<span class="dbadge" title="array items paired by this field">by ' + esc(n.matchedBy) + "</span>";
+    if (n.keyFallback) h += '<span class="dbadge warn" title="no field is present and unique in every item on both sides, so items were paired by position">by position — no unique key</span>';
+  } else if (st === "changed") {
+    h += '<span class="dold">' + dVal(n.a, q) + '</span><span class="darrow">→</span><span class="dnew">' + dVal(n.b, q) + "</span>";
+  } else if (st === "added") {
+    h += dVal(n.b, q);
+  } else {
+    h += dVal(n.hasA ? n.a : n.b, q);
+  }
+  if (n.kind === "array" && !n.inherited && !n.typeChange && n.hasA && n.hasB && !isCont) {
+    // empty array on both sides — nothing extra to say
+  }
+  h += "</div>";
+  return h;
+}
+
+function cmpNodeHtml(n, vis, q) {
+  if (!cmpVisible(n, vis, q)) return "";
+  const isCont = !n.typeChange && n.children && n.children.length;
+  const open = isCont && cmpIsOpen(n, q);
+  let cls = "dnode";
+  if (isCont && !open) cls += " collapsed";
+  if (n.inherited) cls += " inherited in-" + n.status;
+  let h = '<div class="' + cls + '" data-i="' + n.i + '">' + cmpRowHtml(n, q, open);
+  if (isCont) {
+    h += '<div class="dchildren"' + (open ? "" : ' data-lazy="1"') + ">";
+    // Children of a collapsed node are only built when it's opened, so a
+    // large, mostly identical document doesn't render thousands of hidden rows.
+    if (open) h += cmpChildrenHtml(n, vis, q);
+    h += "</div>";
+  }
+  return h + "</div>";
+}
+function cmpChildrenHtml(n, vis, q) {
+  let h = "";
+  for (const c of n.children) h += cmpNodeHtml(c, vis, q);
+  return h;
+}
+
+function cmpRender() {
+  const box = $("#cmpResult");
+  const A = CMP.parsed.a, B = CMP.parsed.b;
+  cmpChips();
+  CMP.list = []; CMP.navIdx = -1;
+
+  if (!A || !B) {
+    const missing = !A && !B ? "A and B" : !A ? "A" : "B";
+    box.innerHTML = '<div class="cmp-empty">Paste JSON into <b>' + missing + '</b> to compare.' +
+      '<br>Either side can also be one of your saved documents — pick it from the menu above the box — or a <b>.json</b> file dropped onto the box.' +
+      '<br><br>Keys are compared by name, so their order never counts as a difference. ' +
+      'For lists of records that may come back in a different order, switch <b>Arrays</b> to <b>By key</b>.</div>';
+    cmpNavLabel();
+    return;
+  }
+  if (A.error || B.error) {
+    const side = A.error ? "A" : "B", e = (A.error || B.error);
+    box.innerHTML = '<div class="cmp-empty bad"><b>' + side + " isn't valid JSON</b> — line " + e.line + ", column " + e.col +
+      "<br>" + esc(e.message) + '<br><br>Fix it, or press <b>Format</b> above it to see where it breaks.</div>';
+    cmpNavLabel();
+    return;
+  }
+
+  const c = CMP.counts;
+  const diffs = c.added + c.removed + c.changed;
+  if (!diffs && !CMP.iso && CMP.view === "diff" && !CMP.search) {
+    const ign = cmpIgnoreSet();
+    box.innerHTML = '<div class="cmp-same"><div class="big">No differences</div>' +
+      '<div class="sub">A and B have the same keys with the same values — ' + c.same.toLocaleString() + " compared" +
+      (ign.size ? ", ignoring " + esc(Array.from(ign).join(", ")) : "") +
+      (CMP.arrayMode === "key" ? ", arrays matched by key" : "") +
+      '.</div><button class="cmp-btn" id="cmpShowAll" style="margin-top:10px">Show everything</button></div>';
+    $("#cmpShowAll").onclick = () => cmpSetView("all");
+    cmpNavLabel();
+    return;
+  }
+
+  const vis = cmpVisMask();
+  const q = CMP.search.trim().toLowerCase();
+  cmpMarkHits(q);
+  const r = CMP.root;
+  let html;
+  // A root container's children are shown at the top level — the root itself
+  // adds an indent and nothing else.
+  if (!r.typeChange && r.children && r.children.length) html = cmpChildrenHtml(r, vis, q);
+  else html = cmpNodeHtml(r, vis, q);
+  box.innerHTML = html || '<div class="cmp-empty">Nothing matches the current filter.</div>';
+
+  CMP.list = diffList(r).filter(n => (n.mask & vis) && (!q || n.hit));
+  cmpNavLabel();
+}
+
+function cmpChips() {
+  const c = CMP.counts || { added: 0, removed: 0, changed: 0, same: 0 };
+  $("#cntAdd").textContent = c.added.toLocaleString();
+  $("#cntDel").textContent = c.removed.toLocaleString();
+  $("#cntChg").textContent = c.changed.toLocaleString();
+  $("#cntSame").textContent = c.same.toLocaleString();
+  const vis = cmpVisMask();
+  document.querySelectorAll(".sum-chip").forEach(ch => {
+    const cat = +ch.dataset.cat;
+    ch.classList.toggle("iso", CMP.iso === cat);
+    ch.classList.toggle("dim", !(vis & cat));
+    ch.disabled = !CMP.counts;
+  });
+  document.querySelectorAll("#cmpView button").forEach(b => b.classList.toggle("on", !CMP.iso && b.dataset.view === CMP.view));
+}
+
+function cmpSetView(v) { CMP.view = v; CMP.iso = 0; CMP.collapsed = {}; cmpRender(); cmpPersist(); }
+
+/* ---- expand / collapse ---- */
+function cmpToggle(nodeEl) {
+  const n = CMP.byIndex[+nodeEl.dataset.i];
+  if (!n) return;
+  const open = nodeEl.classList.contains("collapsed");
+  cmpOpenEl(nodeEl, n, open);
+  CMP.collapsed[n.path] = !open;
+}
+function cmpOpenEl(nodeEl, n, open) {
+  const kids = nodeEl.querySelector(":scope > .dchildren");
+  if (open && kids && kids.dataset.lazy) {
+    kids.innerHTML = cmpChildrenHtml(n, cmpVisMask(), CMP.search.trim().toLowerCase());
+    delete kids.dataset.lazy;
+  }
+  nodeEl.classList.toggle("collapsed", !open);
+}
+
+/* ---- next / previous difference ---- */
+function cmpNavLabel() {
+  const n = CMP.list.length;
+  $("#cmpNavPos").textContent = n ? (CMP.navIdx < 0 ? "– / " : (CMP.navIdx + 1) + " / ") + n.toLocaleString() : "–";
+  $("#cmpPrev").disabled = $("#cmpNext").disabled = !n;
+  $("#cmpCopy").disabled = !CMP.root;
+}
+function cmpGo(step) {
+  const n = CMP.list.length;
+  if (!n) return;
+  CMP.navIdx = CMP.navIdx < 0 ? (step > 0 ? 0 : n - 1) : (CMP.navIdx + step + n) % n;
+  const target = CMP.list[CMP.navIdx];
+  // Open every ancestor, building lazily rendered levels on the way down.
+  const chain = [];
+  for (let p = target.parent; p && p !== CMP.root; p = p.parent) chain.unshift(p);
+  for (const p of chain) {
+    const el = $('#cmpResult .dnode[data-i="' + p.i + '"]');
+    if (el && el.classList.contains("collapsed")) { cmpOpenEl(el, p, true); CMP.collapsed[p.path] = false; }
+  }
+  const el = $('#cmpResult .dnode[data-i="' + target.i + '"]');
+  document.querySelectorAll("#cmpResult .dnode.focus").forEach(x => x.classList.remove("focus"));
+  if (el) {
+    el.classList.add("focus");
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    cmpShowPath(target);
+  }
+  cmpNavLabel();
+}
+
+function cmpShowPath(n) {
+  let t = esc(dispPath(n.path));
+  if (n.status === "changed" && !n.children) t += '  <span style="color:var(--text-faint)">·  ' + esc(dShort(n.a, 60)) + "  →  " + esc(dShort(n.b, 60)) + "</span>";
+  $("#cmpPathBar").innerHTML = "<span>" + t + "</span>";
+}
+
+/* ---- status bar ---- */
+function cmpStatus() {
+  const bar = $("#statusbar");
+  bar.classList.remove("valid", "invalid");
+  const A = CMP.parsed.a, B = CMP.parsed.b;
+  if (!A || !B) { $("#statusMain").textContent = "Compare · waiting for " + (!A && !B ? "A and B" : !A ? "A" : "B"); $("#statusStats").textContent = ""; return; }
+  if (A.error || B.error) { bar.classList.add("invalid"); $("#statusMain").textContent = "Compare · " + (A.error ? "A" : "B") + " is invalid"; $("#statusStats").textContent = ""; return; }
+  const c = CMP.counts, d = c.added + c.removed + c.changed;
+  bar.classList.add("valid");
+  $("#statusMain").textContent = d ? "Compare · " + d.toLocaleString() + (d === 1 ? " difference" : " differences") : "Compare · identical";
+  const ign = cmpIgnoreSet();
+  $("#statusStats").innerHTML =
+    "<span>arrays <b>" + (CMP.arrayMode === "key" ? "by key" + (CMP.arrayKey ? " · " + esc(CMP.arrayKey) : "") : "by position") + "</b></span>" +
+    (ign.size ? "<span>ignoring <b>" + ign.size + "</b> key" + (ign.size === 1 ? "" : "s") + "</span>" : "") +
+    "<span><b>" + c.same.toLocaleString() + "</b> same</span>";
+}
+
+/* ---- persistence ---- */
+let cmpSaveT;
+function cmpPersist() {
+  clearTimeout(cmpSaveT);
+  cmpSaveT = setTimeout(() => {
+    // Browser storage is a few MB shared with your saved documents. Inputs
+    // larger than this are compared normally but not kept across a reload,
+    // so they can never push the documents themselves out of storage.
+    const a = cmpEl("a").value, b = cmpEl("b").value;
+    const keep = a.length + b.length <= 1500000;
+    if (!keep && !CMP.warnedBig) { CMP.warnedBig = true; toast("Large inputs — compared, but not kept after reload"); }
+    store.set("bracket.compare", JSON.stringify({
+      a: keep ? a : "", b: keep ? b : "", src: keep ? CMP.src : { a: null, b: null },
+      arrayMode: CMP.arrayMode, arrayKey: CMP.arrayKey, ignore: CMP.ignore,
+      view: CMP.view, inputsHidden: CMP.inputsHidden
+    }));
+  }, 200);
+}
+function cmpLoad() {
+  try {
+    const s = JSON.parse(store.get("bracket.compare") || "null");
+    if (!s) return;
+    cmpEl("a").value = s.a || ""; cmpEl("b").value = s.b || "";
+    CMP.src = s.src || { a: null, b: null };
+    CMP.arrayMode = s.arrayMode === "key" ? "key" : "index";
+    CMP.arrayKey = s.arrayKey || ""; CMP.ignore = s.ignore || "";
+    CMP.view = s.view === "all" ? "all" : "diff";
+    CMP.inputsHidden = !!s.inputsHidden;
+  } catch (e) {}
+}
+function cmpSyncControls() {
+  document.querySelectorAll("#cmpArrMode button").forEach(b => b.classList.toggle("on", b.dataset.am === CMP.arrayMode));
+  $("#cmpKey").disabled = CMP.arrayMode !== "key";
+  $("#cmpKey").value = CMP.arrayKey;
+  $("#cmpIgnore").value = CMP.ignore;
+  $("#compareView").classList.toggle("inputs-hidden", CMP.inputsHidden);
+  $("#cmpToggleInputs").textContent = CMP.inputsHidden ? "⌄ Inputs" : "⌃ Inputs";
+}
+
+/* ---- wiring ---- */
+function initCompare() {
+  cmpLoad();
+  cmpSyncControls();
+
+  $("#modeEdit").addEventListener("click", () => setMode("edit"));
+  $("#modeCompare").addEventListener("click", () => setMode("compare"));
+
+  ["a", "b"].forEach(side => {
+    const ta = cmpEl(side);
+    ta.addEventListener("input", () => {
+      // Edited by hand — it's no longer a faithful copy of that saved document.
+      if (CMP.src[side]) { CMP.src[side] = null; cmpFillSources(); }
+      cmpRunSoon();
+    });
+    ta.addEventListener("keydown", e => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = ta.selectionStart, en = ta.selectionEnd;
+        ta.value = ta.value.slice(0, s) + "  " + ta.value.slice(en);
+        ta.selectionStart = ta.selectionEnd = s + 2;
+      }
+    });
+    const pane = ta.closest(".cmp-pane");
+    pane.addEventListener("dragover", e => { e.preventDefault(); pane.classList.add("drop"); });
+    pane.addEventListener("dragleave", () => pane.classList.remove("drop"));
+    pane.addEventListener("drop", e => {
+      e.preventDefault(); pane.classList.remove("drop");
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (!f) return;
+      f.text().then(t => {
+        ta.value = t; CMP.src[side] = null; cmpFillSources(); cmpRun();
+        toast("Loaded into " + side.toUpperCase(), esc(f.name));
+      });
+    });
+  });
+
+  document.querySelectorAll(".cmp-src").forEach(sel => {
+    sel.addEventListener("focus", cmpFillSources);
+    sel.addEventListener("change", () => {
+      const side = sel.dataset.side, d = docs.find(x => x.id === sel.value);
+      if (!d) { CMP.src[side] = null; cmpRun(); return; }
+      cmpEl(side).value = d.content; CMP.src[side] = d.id; CMP.collapsed = {};
+      cmpRun();
+    });
+  });
+
+  $("#cmpInputs").addEventListener("click", e => {
+    const b = e.target.closest("button[data-cact]");
+    if (!b) return;
+    const side = b.dataset.side, ta = cmpEl(side);
+    if (b.dataset.cact === "clear") { ta.value = ""; CMP.src[side] = null; cmpFillSources(); cmpRun(); ta.focus(); }
+    if (b.dataset.cact === "format") {
+      const r = tolerantParse(ta.value);
+      if (!r.ok) { toast("Can't format " + side.toUpperCase() + " — invalid JSON"); return; }
+      ta.value = JSON.stringify(r.value, null, 2);
+      cmpRun();
+    }
+  });
+
+  $("#cmpSwap").addEventListener("click", () => {
+    const a = cmpEl("a").value; cmpEl("a").value = cmpEl("b").value; cmpEl("b").value = a;
+    const s = CMP.src.a; CMP.src.a = CMP.src.b; CMP.src.b = s;
+    cmpFillSources(); CMP.collapsed = {}; cmpRun();
+    toast("Swapped A and B");
+  });
+
+  document.querySelectorAll(".sum-chip").forEach(ch => ch.addEventListener("click", () => {
+    const cat = +ch.dataset.cat;
+    CMP.iso = CMP.iso === cat ? 0 : cat;     // click again to clear
+    CMP.collapsed = {};
+    cmpRender();
+  }));
+  $("#cmpView").addEventListener("click", e => {
+    const b = e.target.closest("button[data-view]");
+    if (b) cmpSetView(b.dataset.view);
+  });
+  $("#cmpArrMode").addEventListener("click", e => {
+    const b = e.target.closest("button[data-am]");
+    if (!b) return;
+    CMP.arrayMode = b.dataset.am; CMP.collapsed = {};
+    cmpSyncControls(); cmpRun();
+    if (CMP.arrayMode === "key") $("#cmpKey").focus();
+  });
+  $("#cmpKey").addEventListener("input", () => { CMP.arrayKey = $("#cmpKey").value.trim(); cmpRunSoon(); });
+  $("#cmpIgnore").addEventListener("input", () => { CMP.ignore = $("#cmpIgnore").value; cmpRunSoon(); });
+  let sDeb;
+  $("#cmpSearch").addEventListener("input", () => {
+    clearTimeout(sDeb);
+    sDeb = setTimeout(() => { CMP.search = $("#cmpSearch").value; CMP.collapsed = {}; cmpRender(); }, 160);
+  });
+
+  $("#cmpPrev").addEventListener("click", () => cmpGo(-1));
+  $("#cmpNext").addEventListener("click", () => cmpGo(1));
+  $("#cmpCopy").addEventListener("click", () => {
+    if (!CMP.root) return;
+    copyText(diffReport(CMP.root, cmpLabel("a"), cmpLabel("b")));
+    const c = CMP.counts, d = c.added + c.removed + c.changed;
+    toast("Copied report", d + (d === 1 ? " difference" : " differences"));
+  });
+  $("#cmpToggleInputs").addEventListener("click", () => {
+    CMP.inputsHidden = !CMP.inputsHidden; cmpSyncControls(); cmpPersist();
+  });
+
+  const res = $("#cmpResult");
+  res.addEventListener("click", e => {
+    const nodeEl = e.target.closest(".dnode");
+    if (!nodeEl) return;
+    if (e.target.classList.contains("twisty")) { cmpToggle(nodeEl); return; }
+    const n = CMP.byIndex[+nodeEl.dataset.i];
+    if (!n) return;
+    const p = dispPath(n.path);
+    copyText(p);
+    toast("Copied path", esc(p));
+  });
+  res.addEventListener("dblclick", e => {
+    const nodeEl = e.target.closest(".dnode");
+    if (nodeEl && nodeEl.querySelector(":scope > .dchildren")) cmpToggle(nodeEl);
+  });
+  res.addEventListener("mouseover", e => {
+    const row = e.target.closest(".drow");
+    if (!row) return;
+    const n = CMP.byIndex[+row.parentElement.dataset.i];
+    if (n) cmpShowPath(n);
+  });
+  res.addEventListener("mouseleave", () => {
+    $("#cmpPathBar").innerHTML = '<span class="path-empty">hover a row to see its path · click to copy</span>';
+  });
+
+  document.addEventListener("keydown", e => {
+    if (CMP.mode !== "compare") return;
+    const t = e.target.tagName;
+    if (t === "TEXTAREA" || t === "INPUT" || t === "SELECT" || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "n" || e.key === "j") { e.preventDefault(); cmpGo(1); }
+    if (e.key === "p" || e.key === "k") { e.preventDefault(); cmpGo(-1); }
+  });
+
+  if (store.get("bracket.mode") === "compare") setMode("compare");
+}
+
 /* ============================ Sidebar / theme toggles ============================ */
 function toggleSidebar(){
   const app=$("#app");
@@ -1092,10 +2185,31 @@ function toggleSidebar(){
   else app.classList.toggle("sidebar-collapsed");
 }
 function closeSidebar(){ $("#app").classList.remove("sidebar-open"); }
-function toggleTheme(){
-  const cur=document.documentElement.getAttribute("data-theme");
-  document.documentElement.setAttribute("data-theme", cur==="dark"?"light":"dark");
-  persist();
+/* Theme: "system" follows the OS live — switch macOS to dark at sunset and the
+   page follows without a reload. "light" / "dark" pin it. The preference is
+   stored, never the resolved theme, so System stays System. */
+const themeMQ = window.matchMedia ? matchMedia("(prefers-color-scheme: dark)") : null;
+function themePref(){ return document.documentElement.getAttribute("data-theme-pref") || "system"; }
+function applyTheme(){
+  const pref=themePref();
+  const dark = pref==="dark" || (pref==="system" && themeMQ && themeMQ.matches);
+  document.documentElement.setAttribute("data-theme", dark?"dark":"light");
+  document.querySelectorAll("#themeSeg button").forEach(b=>{
+    const on=b.dataset.pref===pref;
+    b.classList.toggle("on",on);
+    b.setAttribute("aria-checked",on?"true":"false");
+  });
+  const sys=$('#themeSeg button[data-pref="system"]');
+  if(sys) sys.title="Follow your computer's light / dark setting — currently "+(themeMQ&&themeMQ.matches?"dark":"light");
+}
+function setThemePref(pref){
+  document.documentElement.setAttribute("data-theme-pref",pref);
+  store.set("bracket.themePref",pref);
+  applyTheme();
+}
+if(themeMQ){
+  const onOS=()=>{ if(themePref()==="system") applyTheme(); };
+  if(themeMQ.addEventListener) themeMQ.addEventListener("change",onOS); else if(themeMQ.addListener) themeMQ.addListener(onOS);
 }
 
 /* ============================ Wiring ============================ */
@@ -1149,7 +2263,10 @@ function init(){
   $("#newDoc").addEventListener("click",newDoc);
   $("#sidebarToggle").addEventListener("click",toggleSidebar);
   $("#scrim").addEventListener("click",closeSidebar);
-  $("#themeToggle").addEventListener("click",toggleTheme);
+  $("#themeSeg").addEventListener("click",e=>{
+    const b=e.target.closest("button[data-pref]"); if(b) setThemePref(b.dataset.pref);
+  });
+  applyTheme();
   $("#docName").addEventListener("dblclick",startTopRename);
 
   $("#openGen").addEventListener("click",openGen);
@@ -1162,6 +2279,8 @@ function init(){
   });
   $("#genModal").addEventListener("click",e=>{ if(e.target.id==="genModal") closeGen(); });
   document.addEventListener("keydown",e=>{ if(e.key==="Escape" && !$("#genModal").hidden) closeGen(); });
+
+  initCompare();
 }
 init();
 </script>
